@@ -26,30 +26,27 @@ class Resolver:
 
     async def resolve(self, page, page_size, *uris):
         uris = set(uris)
+        claim_trie_root = self.ledger.headers.claim_trie_root
         try:
             for uri in uris:
                 parsed_uri = parse_lbry_uri(uri)
                 if parsed_uri.claim_id:
                     validate_claim_id(parsed_uri.claim_id)
-            claim_trie_root = self.ledger.headers.claim_trie_root
-            resolutions = await self.network.get_values_for_uris(self.ledger.headers.hash().decode(), *uris)
-            if len(uris) > 1:
-                return await self._batch_handle(resolutions, uris, page, page_size, claim_trie_root)
-            return await self._handle_resolutions(resolutions, uris, page, page_size, claim_trie_root)
+            return await self.__resolve_many(uris, page, page_size, claim_trie_root)
         except URIParseError as err:
             return {'error': err.args[0]}
         except Exception as e:
             log.exception(e)
             return {'error': str(e)}
 
-    async def _batch_handle(self, resolutions, uris, page, page_size, claim_trie_root):
+    async def __resolve_many(self, uris, page, page_size, claim_trie_root):
         futs = []
         for uri in uris:
             futs.append(
-                asyncio.ensure_future(self._handle_resolutions(resolutions, [uri], page, page_size, claim_trie_root))
+                asyncio.ensure_future(self.__cacheable_resolve(uri, page, page_size, claim_trie_root))
             )
         results = await asyncio.gather(*futs)
-        return dict(list(map(lambda result: list(result.items())[0], results)))
+        return dict(results)
 
     @lru_cache(256)
     def _fetch_tx(self, txid):
@@ -57,22 +54,25 @@ class Resolver:
             return self.transaction_class(unhexlify(await self.network.get_transaction(txid)))
         return asyncio.ensure_future(__fetch_parse(txid))
 
-    async def _handle_resolutions(self, resolutions, requested_uris, page, page_size, claim_trie_root):
-        results = {}
-        for uri in requested_uris:
-            resolution = (resolutions or {}).get(uri, {})
-            if resolution:
-                try:
-                    results[uri] = _handle_claim_result(
-                        await self._handle_resolve_uri_response(uri, resolution, claim_trie_root, page, page_size),
-                        uri
-                    )
-                except (UnknownNameError, UnknownClaimID, UnknownURI) as err:
-                    log.exception(err)
-                    results[uri] = {'error': str(err)}
-            else:
-                results[uri] = {'error': "URI lbry://{} cannot be resolved".format(uri.replace("lbry://", ""))}
-        return results
+    @lru_cache(256)
+    def __cacheable_resolve(self, uri, page, page_size, claim_trie_root):
+        return asyncio.ensure_future(self.__resolve(uri, page, page_size, claim_trie_root))
+
+    async def __resolve(self, uri, page, page_size, claim_trie_root):
+        resolution = await self.network.get_values_for_uris(self.ledger.headers.hash().decode(), uri)
+        resolution = (resolution or {}).get(uri)
+        if resolution:
+            try:
+                results = _handle_claim_result(
+                    await self._handle_resolve_uri_response(uri, resolution, claim_trie_root, page, page_size),
+                    uri
+                )
+            except (UnknownNameError, UnknownClaimID, UnknownURI) as err:
+                log.exception(err)
+                results = {'error': str(err)}
+        else:
+            results = {'error': "URI lbry://{} cannot be resolved".format(uri.replace("lbry://", ""))}
+        return uri, results
 
     async def _handle_resolve_uri_response(self, uri, resolution, claim_trie_root, page=0, page_size=10):
         result = {}

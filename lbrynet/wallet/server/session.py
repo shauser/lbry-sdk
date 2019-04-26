@@ -1,3 +1,6 @@
+import asyncio
+from functools import lru_cache
+
 import math
 import unicodedata as uda
 from binascii import unhexlify, hexlify
@@ -302,7 +305,11 @@ class LBRYElectrumX(ElectrumX):
             return self.normalize_name(name) == claim['normalized_name']
         return name == claim['name']
 
-    async def claimtrie_getvalueforuri(self, block_hash, uri, known_certificates=None):
+    @lru_cache(256)
+    def claimtrie_getvalueforuri(self, block_hash, uri):
+        return asyncio.ensure_future(self.__getvalueforuri(block_hash, uri))
+
+    async def __getvalueforuri(self, block_hash, uri):
         # TODO: this thing is huge, refactor
         CLAIM_ID = "claim_id"
         WINNING = "winning"
@@ -390,13 +397,11 @@ class LBRYElectrumX(ElectrumX):
         if len(uris) > MAX_BATCH_URIS:
             raise Exception("Exceeds max batch uris of {}".format(MAX_BATCH_URIS))
 
-        return {uri: await self.claimtrie_getvalueforuri(block_hash, uri) for uri in uris}
-
-        # TODO: get it all concurrently when lbrycrd pending changes goes into a stable release
-        #async def getvalue(uri):
-        #    value = await self.claimtrie_getvalueforuri(block_hash, uri)
-        #    return uri, value,
-        #return dict([await asyncio.gather(*tuple(getvalue(uri) for uri in uris))][0])
+        results = {}
+        async def getvalue(uri):
+            results[uri] = await self.claimtrie_getvalueforuri(block_hash, uri)
+        await asyncio.gather(*(getvalue(uri) for uri in set(uris)))
+        return results
 
 
 def proof_has_winning_claim(proof):

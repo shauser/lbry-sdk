@@ -206,7 +206,8 @@ class IterativeFinder:
                 t.add_done_callback(callback)
                 self.running_probes.add(t)
                 added += 1
-        log.debug("running %d probes", len(self.running_probes))
+        log.debug("running %d probes, %d done", len(self.running_probes),
+                  len([probe for probe in self.running_probes if probe.done()]))
         if not added and not self.running_probes:
             log.debug("search for %s exhausted", hexlify(self.key)[:8])
             self.search_exhausted()

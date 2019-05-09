@@ -518,17 +518,21 @@ class KademliaProtocol(DatagramProtocol):
             self.loop.create_task(self.handle_response_datagram(address, message))
 
     async def send_request(self, peer: 'KademliaPeer', request: RequestDatagram) -> ResponseDatagram:
+        log.debug("SEND: %s:%d -- %s", peer.address, peer.udp_port, request.method)
         await self._send(peer, request)
         response_fut = self.sent_messages[request.rpc_id][1]
         try:
             response = await asyncio.wait_for(response_fut, self.rpc_timeout)
+            log.debug("REPLIED: %s:%d -- %s", peer.address, peer.udp_port, request.method)
             self.peer_manager.report_last_replied(peer.address, peer.udp_port)
             return response
         except asyncio.CancelledError:
+            log.debug("CANCELLED: %s:%d -- %s", peer.address, peer.udp_port, request.method)
             if not response_fut.done():
                 response_fut.cancel()
             raise
-        except (asyncio.TimeoutError, RemoteException):
+        except (asyncio.TimeoutError, RemoteException) as err:
+            log.debug("ERROR: %s:%d -- %s - %s", peer.address, peer.udp_port, request.method, str(type(err)))
             self.peer_manager.report_failure(peer.address, peer.udp_port)
             if self.peer_manager.peer_is_good(peer) is False:
                 async with self._split_lock:

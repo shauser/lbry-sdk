@@ -3,6 +3,7 @@ import unicodedata as uda
 from binascii import unhexlify, hexlify
 
 from torba.rpc.jsonrpc import RPCError
+from torba.server.daemon import Daemon
 from torba.server.hash import hash_to_hex_str
 from torba.server.session import ElectrumX
 from torba.server import util
@@ -20,7 +21,7 @@ class LBRYElectrumX(ElectrumX):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # fixme: this is a rebase hack, we need to go through ChainState instead later
-        self.daemon = self.session_mgr.daemon
+        self.daemon: Daemon = self.session_mgr.daemon
         self.bp: LBRYBlockProcessor = self.session_mgr.bp
         self.db: LBRYDB = self.bp.db
 
@@ -34,6 +35,7 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.claimtrie.getclaimsforname': self.claimtrie_getclaimsforname,
             'blockchain.claimtrie.getclaimsbyids': self.claimtrie_getclaimsbyids,
             'blockchain.claimtrie.getvalue': self.claimtrie_getvalue,
+            'blockchain.claimtrie.getnameproofs': self.claimtrie_getnameproofs,
             'blockchain.claimtrie.getnthclaimforname': self.claimtrie_getnthclaimforname,
             'blockchain.claimtrie.getclaimsintx': self.claimtrie_getclaimsintx,
             'blockchain.claimtrie.getclaimssignedby': self.claimtrie_getclaimssignedby,
@@ -52,6 +54,9 @@ class LBRYElectrumX(ElectrumX):
 
     async def claimtrie_resolve(self, *urls):
         return Outputs.to_base64(*self.db.sql.resolve(urls))
+
+    def claimtrie_getnameproofs(self, root_hash, *names):
+        return self.daemon._send_vector('getnameproof', iter((name, root_hash) for name in names))
 
     async def get_server_height(self):
         return self.bp.height

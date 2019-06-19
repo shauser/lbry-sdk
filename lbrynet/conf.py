@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from appdirs import user_data_dir, user_config_dir
 from lbrynet.error import InvalidCurrencyError
 from lbrynet.dht import constants
+from torba.client.coinselection import STRATEGIES
 
 log = logging.getLogger(__name__)
 
@@ -192,7 +193,36 @@ class MaxKeyFee(Setting[dict]):
         )
 
 
-class Servers(Setting[list]):
+class OneOfString(String):
+    def __init__(self, valid_values: typing.List[str], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.valid_values = valid_values
+        if not self.valid_values:
+            raise ValueError(f"No valid values provided")
+        if self.default not in self.valid_values:
+            raise ValueError(f"Default value must be one of: " + ', '.join(self.valid_values))
+
+    def validate(self, val):
+        super().validate(val)
+        if val not in self.valid_values:
+            raise ValueError(f"Setting '{self.name}' must be one of: " + ', '.join(self.valid_values))
+
+
+class ListSetting(Setting[list]):
+
+    def validate(self, val):
+        assert isinstance(val, (tuple, list)), \
+            f"Setting '{self.name}' must be a tuple or list."
+
+    def contribute_to_argparse(self, parser: ArgumentParser):
+        parser.add_argument(
+            self.cli_name,
+            help=self.doc,
+            action='append'
+        )
+
+
+class Servers(ListSetting):
 
     def validate(self, val):
         assert isinstance(val, (tuple, list)), \
@@ -556,6 +586,9 @@ class Config(CLIConfig):
                               'localhost:5280', metavar='HOST:PORT')
     streaming_get = Toggle("Enable the /get endpoint for the streaming media server. "
                            "Disable to prevent new streams from being added.", True)
+
+    coin_selection_strategy = OneOfString(STRATEGIES, "Strategy to use when selecting UTXOs for a transaction",
+                                          "branch_and_bound")
 
     @property
     def streaming_host(self):

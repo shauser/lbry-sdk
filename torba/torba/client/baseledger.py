@@ -422,8 +422,9 @@ class BaseLedger(metaclass=LedgerRegistry):
                         check_db_for_txos.append(txi.txo_ref.id)
 
                 referenced_txos = {
-                    txo.id: txo for txo in await self.db.get_txos(txoid__in=check_db_for_txos)
-                }
+                    txo.id: txo for txo in await self.db.get_txos(
+                        my_accounts=None, txoid__in=check_db_for_txos
+                    )}
 
                 for txi in tx.inputs:
                     if txi.txo_ref.txo is not None:

@@ -5,3 +5,7 @@ authors = ["LBRY Inc. <hello@lbry.com>"]
 edition = "2018"
 
 [dependencies]
+dirs = "2.0.1"
+glob = "0.3"
+bitcoin = "0.18"
+bitcoin_hashes = "0.3.2"

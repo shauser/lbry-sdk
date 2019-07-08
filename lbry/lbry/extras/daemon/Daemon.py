@@ -272,7 +272,6 @@ class Daemon(metaclass=JSONRPCServerType):
         )
         self.component_startup_task = None
         self._connection_status: typing.Tuple[float, bool] = [self.component_manager.loop.time(), False]
-        self.stop_event = asyncio.Event()
 
         logging.getLogger('aiohttp.access').setLevel(logging.WARN)
         rpc_app = web.Application()
@@ -436,7 +435,7 @@ class Daemon(metaclass=JSONRPCServerType):
         except asyncio.CancelledError:
             log.info("shutting down before finished starting")
             await self.analytics_manager.send_server_startup_error("shutting down before finished starting")
-            await self.stop()
+            raise
         except Exception as e:
             await self.analytics_manager.send_server_startup_error(str(e))
             log.exception('Failed to start lbrynet')
@@ -696,8 +695,12 @@ class Daemon(metaclass=JSONRPCServerType):
         Returns:
             (string) Shutdown message
         """
+
+        def shutdown():
+            raise web.GracefulExit()
+
         log.info("Shutting down lbrynet daemon")
-        self.stop_event.set()
+        asyncio.get_event_loop().call_later(0, shutdown)
         return "Shutting down"
 
     async def jsonrpc_status(self):
